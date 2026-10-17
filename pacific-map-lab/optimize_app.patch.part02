@@ -1,0 +1,47 @@
+L)
+@@ -256,9 +304,11 @@
+     lat <- suppressWarnings(as.numeric(bits[length(bits)]))
+     label <- paste(bits[seq_len(length(bits) - 2)], collapse = ",")
+     if (!nzchar(label) || !is.finite(lon) || !is.finite(lat)) return(NULL)
+-    tibble(label = label, lon = lon, lat = lat)
++    data.frame(label = label, lon = lon, lat = lat, stringsAsFactors = FALSE)
+   })
+-  bind_rows(rows)
++  rows <- Filter(Negate(is.null), rows)
++  if (!length(rows)) return(data.frame(label = character(), lon = numeric(), lat = numeric(), stringsAsFactors = FALSE))
++  do.call(rbind, rows)
+ }
+ 
+ filter_xy_to_bbox <- function(x, bb) {
+@@ -474,7 +524,7 @@
+     paste0("Natural Earth scale: ", md$ne_scale),
+     paste0("Theme: ", opts$map_theme),
+     paste0("Research layer: ", if (is.null(user_layer)) "none" else paste(nrow(user_layer), "features")),
+-    "Bathymetry: NOAA ETOPO 2022 via marmap::getNOAA.bathy().",
++    "Bathymetry: NOAA ETOPO 2022 via the NCEI ArcGIS ImageServer, read with terra.",
+     "Land and coastline: Natural Earth via rnaturalearth.",
+     "Rendering: ggplot2 + sf + ggspatial."
+   )
+@@ -627,7 +677,7 @@
+       sidebar = sidebar_ui,
+       bslib::navset_card_tab(
+         id = "main_nav",
+-        bslib::nav_panel("Publication map", div(class = "status-ribbon", icon("pen-ruler"), textOutput("preview_hint", inline = TRUE)), plotOutput("map_plot", height = "calc(100vh - 180px)", class = "pm-plot")),
++        bslib::nav_panel("Publication map", div(class = "status-ribbon", icon("pen-ruler"), textOutput("preview_hint", inline = TRUE)), plotOutput("map_plot", height = "calc(100vh - 180px)")),
+         bslib::nav_panel("R code", tags$p(class = "mini-note", "The same reconstruction script is included in the editable R project."), tags$pre(class = "pm-code", textOutput("r_code_preview"))),
+         bslib::nav_panel("Data & provenance", uiOutput("metric_boxes"), tags$hr(), tags$pre(class = "pm-code", textOutput("provenance_preview")))
+       )
+@@ -674,10 +724,9 @@
+         bathy <- fetch_bathy_resilient(bb, requested)
+         used <- attr(bathy, "resolution_used"); protected <- attr(bathy, "protected_resolution")
+         incProgress(.30, detail = "Preparing the regular ggplot grid")
+-        bathy_df <- marmap::fortify.bathy(bathy) |>
+-          dplyr::rename(lon = x, lat = y, elevation_m = z) |>
+-          dplyr::mutate(depth_m = dplyr::if_else(elevation_m <= 0, -elevation_m, NA_real_))
+-        sea_df <- dplyr::filter(bathy_df, is.finite(depth_m))
++        bathy_df <- bathy
++        bathy_df$depth_m <- ifelse(bathy_df$elevation_m <= 0, -bathy_df$elevation_m, NA_real_)
++        sea_df <- bathy_df[is.finite(bathy_df$depth_m), , drop = FALSE]
+         if (!nrow(sea_df)) stop("The extent contains no marine bathymetry.")
+         lon_vals <- sort(unique(bathy_df$lon)); lat_vals <- sort(unique(bathy_df$lat))
+         grid_dx <- if (length(lon_vals) > 1) median(diff(lon_vals)) else 0.01
