@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: pacific-map-lab
+    runtime: docker
+    plan: free
+    rootDir: pacific-map-lab
+    autoDeploy: true
+    healthCheckPath: /
+    envVars:
+      - key: PACIFIC_MAP_CACHE_DIR
+        value: /tmp/PacificMapLab-cache
