@@ -9,7 +9,10 @@ RUN install2.r --error --skipinstalled --ncpus -1 \
     colourpicker ragg svglite scales jsonlite zip viridisLite units
 
 WORKDIR /app
-COPY app.R /app/app.R
+COPY app4.R.gz.b64.part* /tmp/
+RUN cat /tmp/app4.R.gz.b64.part* | base64 -d | gzip -dc > /app/app.R \
+    && test -s /app/app.R \
+    && rm -f /tmp/app4.R.gz.b64.part*
 
 ENV PORT=10000
 ENV PACIFIC_MAP_CACHE_DIR=/tmp/PacificMapLab-cache
