@@ -10,6 +10,7 @@ RUN install2.r --error --skipinstalled --ncpus -1 \
 WORKDIR /app
 COPY app4.R.gz.b64.part* /tmp/
 RUN cat /tmp/app4.R.gz.b64.part* | base64 -d | gzip -dc > /app/app.R \
+    && sed -i 's/, class = "pm-plot"//' /app/app.R \
     && test -s /app/app.R \
     && rm -f /tmp/app4.R.gz.b64.part*
 
