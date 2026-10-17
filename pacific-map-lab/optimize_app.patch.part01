@@ -1,0 +1,116 @@
+      marmap::getNOAA.bathy(
+-          lon1 = bb$xmin, lon2 = bb$xmax,
+-          lat1 = bb$ymin, lat2 = bb$ymax,
+-          resolution = res, keep = TRUE
+-        ),
+-        error = function(e) e
+-      )
++      ans <- tryCatch({
++        if (!file.exists(cache_file) || file.info(cache_file)$size < 1024) {
++          params <- c(
++            bbox = paste(bb$xmin, bb$ymin, bb$xmax, bb$ymax, sep = ","),
++            bboxSR = "4326",
++            size = paste(nx, ny, sep = ","),
++            imageSR = "4326",
++            format = "tiff",
++            pixelType = "F32",
++            interpolation = "RSP_NearestNeighbor",
++            compression = "LZ77",
++            renderingRule = '{"rasterFunction":"none"}',
++            mosaicRule = sprintf('{"where":"Name=\'%s\'"}', database),
++            f = "image"
++          )
++          query <- paste0(
++            names(params), "=",
++            vapply(params, utils::URLencode, character(1), reserved = TRUE),
++            collapse = "&"
++          )
++          url <- paste0(
++            "https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics/DEM_all/ImageServer/exportImage?",
++            query
++          )
++          tmp <- tempfile(fileext = ".tif")
++          on.exit(unlink(tmp, force = TRUE), add = TRUE)
++          utils::download.file(url, tmp, mode = "wb", quiet = TRUE)
++          if (!file.exists(tmp) || file.info(tmp)$size < 1024) stop("NOAA returned an empty download.")
++          ok <- file.copy(tmp, cache_file, overwrite = TRUE)
++          if (!ok) stop("The ETOPO cache could not be written.")
++        }
++        read_grid(cache_file)
++      }, error = function(e) e)
++
+       if (!inherits(ans, "error")) {
+         attr(ans, "protected_resolution") <- protected
+         attr(ans, "resolution_used") <- res
+         return(ans)
+       }
++
+       last_error <- ans
++      if (file.exists(cache_file)) unlink(cache_file, force = TRUE)
+       Sys.sleep(min(7, 0.8 * 2^(attempt - 1)))
+     }
+   }
++
+   stop("NOAA bathymetry could not be retrieved. ", conditionMessage(last_error))
+ }
+ 
+@@ -202,26 +239,37 @@
+ get_ne_layers <- function(scale_name) {
+   key <- paste0("ne_", scale_name)
+   if (exists(key, envir = ne_cache, inherits = FALSE)) return(get(key, envir = ne_cache))
+-  result <- tryCatch({
+-    land <- rnaturalearth::ne_download(scale = scale_name, type = "land", category = "physical", returnclass = "sf")
+-    coast <- rnaturalearth::ne_coastline(scale = scale_name, returnclass = "sf")
+-    list(land = sf::st_transform(land, 4326), coast = sf::st_transform(coast, 4326), scale = scale_name)
+-  }, error = function(e) {
+-    land <- rnaturalearth::ne_countries(scale = 110, returnclass = "sf")
+-    coast <- suppressWarnings(sf::st_boundary(sf::st_union(land)))
+-    list(land = land, coast = sf::st_sf(geometry = coast), scale = "small")
+-  })
++
++  scale_value <- switch(scale_name, small = 110, medium = 50, large = 10, 50)
++  land <- tryCatch(
++    rnaturalearth::ne_countries(scale = scale_value, returnclass = "sf"),
++    error = function(e) {
++      if (identical(scale_value, 10)) {
++        rnaturalearth::ne_countries(scale = 50, returnclass = "sf")
++      } else {
++        rnaturalearth::ne_countries(scale = 110, returnclass = "sf")
++      }
++    }
++  )
++  land <- sf::st_sf(geometry = sf::st_geometry(sf::st_transform(land, 4326)))
++  result <- list(land = land, scale = if (identical(scale_value, 10)) "medium" else scale_name)
+   assign(key, result, envir = ne_cache)
+   result
+ }
+ 
+ crop_ne_layers <- function(bb, scale_name) {
+   global <- get_ne_layers(scale_name)
+-  land <- suppressWarnings(sf::st_crop(global$land, bb$bbox))
+-  coast <- suppressWarnings(sf::st_crop(global$coast, bb$bbox))
++  bbox_sf <- sf::st_bbox(bb$bbox, crs = sf::st_crs(4326))
++  land <- suppressWarnings(sf::st_crop(global$land, bbox_sf))
+   land <- land[!sf::st_is_empty(land), , drop = FALSE]
+-  coast <- coast[!sf::st_is_empty(coast), , drop = FALSE]
+-  list(land = suppressWarnings(sf::st_make_valid(land)), coast = coast, scale = global$scale)
++  if (!nrow(land)) {
++    empty <- sf::st_sf(geometry = sf::st_sfc(crs = 4326))
++    return(list(land = empty, coast = empty, scale = global$scale))
++  }
++  dissolved <- suppressWarnings(sf::st_union(sf::st_geometry(land)))
++  land_out <- sf::st_sf(geometry = dissolved)
++  coast_out <- sf::st_sf(geometry = suppressWarnings(sf::st_boundary(dissolved)))
++  list(land = land_out, coast = coast_out, scale = global$scale)
+ }
+ 
+ haversine_km <- function(lon1, lat1, lon2, lat2) {
+@@ -248,7 +296,7 @@
+ 
+ parse_manual_labels <- function(txt) {
+   txt <- trimws(txt %||% "")
+-  if (!nzchar(txt)) return(tibble(label = character(), lon = numeric(), lat = numeric()))
++  if (!nzchar(txt)) return(data.frame(label = character(), lon = numeric(), lat = numeric(), stringsAsFactors = FALSE))
+   rows <- lapply(strsplit(txt, "\n", fixed = TRUE)[[1]], function(line) {
+     bits <- trimws(strsplit(line, ",", fixed = TRUE)[[1]])
+     if (length(bits) < 3) return(NUL
