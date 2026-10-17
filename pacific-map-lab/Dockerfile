@@ -1,7 +1,7 @@
 FROM rocker/geospatial:4.5.1
 
 LABEL org.opencontainers.image.title="Pacific Map Lab"
-LABEL org.opencontainers.image.description="Interactive coastal cartography for the Pacific margin of the Americas"
+LABEL org.opencontainers.image.description="Interactive West Coast Americas coastal cartography tool"
 
 RUN install2.r --error --skipinstalled --ncpus -1 \
     shiny bslib htmltools marmap rnaturalearth rnaturalearthdata \
@@ -9,14 +9,13 @@ RUN install2.r --error --skipinstalled --ncpus -1 \
     jsonlite zip viridisLite scales readr tibble dplyr units terra sf ggplot2
 
 WORKDIR /app
-
-# The complete Shiny source is stored as numbered text chunks so it can be
-# managed through GitHub's text-file API. Reassemble it during the image build.
 COPY app.tar.gz.b64.part* /tmp/
+COPY patch_app.R /tmp/patch_app.R
 RUN cat /tmp/app.tar.gz.b64.part* | base64 -d > /tmp/app.tar.gz \
     && tar -xzf /tmp/app.tar.gz -C /app \
     && test -s /app/app.R \
-    && rm -f /tmp/app.tar.gz /tmp/app.tar.gz.b64.part*
+    && Rscript /tmp/patch_app.R /app/app.R \
+    && rm -f /tmp/app.tar.gz /tmp/app.tar.gz.b64.part* /tmp/patch_app.R
 
 ENV PORT=10000
 ENV PACIFIC_MAP_CACHE_DIR=/tmp/PacificMapLab-cache
