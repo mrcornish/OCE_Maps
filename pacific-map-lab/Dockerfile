@@ -18,7 +18,8 @@ RUN cat /tmp/app4.R.gz.b64.part* | base64 -d | gzip -dc > /app/app.R \
     && cat /tmp/optimize_app.patch.part* > /tmp/optimize_app.patch \
     && cd /app \
     && patch --batch --silent -p0 < /tmp/optimize_app.patch \
-    && Rscript -e "parse(file='/app/app.R')" \
+    && sed -i 's/+ coord_cartesian(/+ ggplot2::coord_cartesian(/g; s/+ theme_void()/+ ggplot2::theme_void()/g' /app/app.R \
+    && Rscript -e "invisible(parse(file='/app/app.R'))" \
     && test -s /app/app.R \
     && rm -f /tmp/app4.R.gz.b64.part* /tmp/optimize_app.patch.part* /tmp/optimize_app.patch
 
